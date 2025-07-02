@@ -25,6 +25,7 @@ env:
   ORGANISATION: ${{ github.repository_owner }}
   VERSION: ${{ github.event.inputs.version || 'latest' }}
   REGISTRY: ${{ github.event.inputs.registry || 'ghcr.io' }}
+  IMAGE_NAME: ${{ env.ORGANISATION }}/${{ env.PACKAGE }}
 
 jobs:
   build:
@@ -42,7 +43,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: $REPOSITORY/$PACKAGE:$VERSION
+          images: ${{ env.IMAGE_NAME }}
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
       - name: Build and push
@@ -51,4 +52,5 @@ jobs:
           push: ${{ github.event.inputs.push }}
           context: .
           target: ${{ env.PACKAGE }}
-          tags: ${{ env.REPOSITORY }}/${{ env.ORGANISATION }}/${{ env.PACKAGE }}:${{ env.VERSION }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
