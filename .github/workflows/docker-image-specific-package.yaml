@@ -42,9 +42,10 @@ jobs:
         uses: docker/metadata-action@v5
         env:
           IMAGE_NAME: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PACKAGE }}
-          VERSION: ${{ env.VERSION }}
         with:
           images: ${{ env.IMAGE_NAME }}
+          build-args: |
+            VERSION=${{ env.VERSION }}
           tags: |
             type=semver,pattern={{version}},value=${{ env.VERSION }}
       - name: Set up Docker Buildx
