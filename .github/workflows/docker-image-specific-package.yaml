@@ -22,7 +22,7 @@ on:
 
 env:
   PACKAGE: ${{ github.event.inputs.package || 'octavia-ingress-controller' }}
-  ORGANISATION: $ {{github.repository_owner}}
+  ORGANISATION: ${{ github.repository_owner }}
   VERSION: ${{ github.event.inputs.version || 'latest' }}
   REGISTRY: ${{ github.event.inputs.registry || 'ghcr.io' }}
 
