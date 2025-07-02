@@ -44,8 +44,6 @@ jobs:
           IMAGE_NAME: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PACKAGE }}
         with:
           images: ${{ env.IMAGE_NAME }}
-          build-args: |
-            VERSION=${{ env.VERSION }}
           tags: |
             type=semver,pattern={{raw}},value=${{ env.VERSION }}
       - name: Set up Docker Buildx
@@ -59,3 +57,5 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           platforms: linux/amd64,linux/arm64/v8
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ env.VERSION }}
