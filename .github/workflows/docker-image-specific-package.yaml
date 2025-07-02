@@ -1,0 +1,54 @@
+name: Docker build and push specific pkg
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: 'Which package you want to build'
+        required: true
+        default: 'octavia-ingress-controller'
+      version:
+        description: 'Version to tag build files with'
+        required: true
+        default: 'latest'
+      registry:
+        description: 'Version to tag build files with'
+        required: true
+        default: 'ghcr.io'
+      push:
+        description: 'Option to push to the registry'
+        required: true
+        default: false
+
+env:
+  PACKAGE: ${{ github.event.inputs.package || 'octavia-ingress-controller' }}
+  ORGANISATION: $ {{github.repository_owner}}
+  VERSION: ${{ github.event.inputs.version || 'latest' }}
+  REGISTRY: ${{ github.event.inputs.registry || 'ghcr.io' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: $REPOSITORY/$PACKAGE:$VERSION
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          push: ${{ github.event.inputs.push }}
+          context: .
+          target: $PACKAGE
+          tags: $REPOSITORY/$ORGANISATION/$PACKAGE:$VERSION
