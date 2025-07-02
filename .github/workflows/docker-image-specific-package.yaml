@@ -41,7 +41,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         env:
-          IMAGE_NAME: ${{ github.repository_owner }}/${{ env.PACKAGE }}
+          IMAGE_NAME: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ env.PACKAGE }}
         with:
           images: ${{ env.IMAGE_NAME }}
       - name: Set up Docker Buildx
