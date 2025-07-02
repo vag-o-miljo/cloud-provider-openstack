@@ -1,14 +1,16 @@
 name: Release Charts
 
 on:
-  push:
-    branches:
-      - "master"
-      - "release-*"
+  workflow_dispatch:
+#   push:
+#     branches:
+#       - "master"
+#       - "release-*"
+
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: go
     permissions:
       contents: write
     steps:
