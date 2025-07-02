@@ -50,5 +50,5 @@ jobs:
         with:
           push: ${{ github.event.inputs.push }}
           context: .
-          target: $PACKAGE
-          tags: $REPOSITORY/$ORGANISATION/$PACKAGE:$VERSION
+          target: ${{ env.PACKAGE }}
+          tags: $ {{ env.REPOSITORY }}/${{ env.ORGANISATION }}/${{ env.PACKAGE. }}:${{ VERSION }}
