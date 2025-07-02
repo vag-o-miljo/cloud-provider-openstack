@@ -21,11 +21,9 @@ on:
         default: false
 
 env:
-  PACKAGE: ${{ github.event.inputs.package || 'octavia-ingress-controller' }}
-  ORGANISATION: ${{ github.repository_owner }}
-  VERSION: ${{ github.event.inputs.version || 'latest' }}
   REGISTRY: ${{ github.event.inputs.registry || 'ghcr.io' }}
-  IMAGE_NAME: ${{ env.ORGANISATION }}/${{ env.PACKAGE }}
+  PACKAGE: ${{ github.event.inputs.package || 'octavia-ingress-controller' }}
+  VERSION: ${{ github.event.inputs.version || 'latest' }}
 
 jobs:
   build:
@@ -42,6 +40,8 @@ jobs:
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
+        env:
+          IMAGE_NAME: ${{ github.repository_owner }}/${{ env.PACKAGE }}
         with:
           images: ${{ env.IMAGE_NAME }}
       - name: Set up Docker Buildx
