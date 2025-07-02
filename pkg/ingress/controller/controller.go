@@ -729,8 +729,10 @@ func (c *Controller) toBarbicanSecretContainer(ctx context.Context, name string,
 	}
 	var certificateChain openstackutil.CertificateChain
 	if keyBytes, isPresent := kube_secret.Data[IngressSecretKeyName]; isPresent {
-		certificateChain.PrivateKey.Payload = base64.StdEncoding.EncodeToString(keyBytes)
-		certificateChain.PrivateKey.PayloadContentType = OCTET_STREAM
+		certificateChain.PrivateKey = &openstackutil.Certificate{
+			Payload:            base64.StdEncoding.EncodeToString(keyBytes),
+			PayloadContentType: OCTET_STREAM,
+		}
 	} else {
 		return "", fmt.Errorf("%s key doesn't exist in the secret %s", IngressSecretKeyName, name)
 	}
@@ -741,8 +743,10 @@ func (c *Controller) toBarbicanSecretContainer(ctx context.Context, name string,
 		if err != nil {
 			return "", err
 		}
-		certificateChain.Certificate.Payload = base64.StdEncoding.EncodeToString(cb[0].Raw)
-		certificateChain.PrivateKey.PayloadContentType = OCTET_STREAM
+		certificateChain.Certificate = openstackutil.Certificate{
+			Payload:            base64.StdEncoding.EncodeToString(cb[0].Raw),
+			PayloadContentType: OCTET_STREAM,
+		}
 
 		// We assume that the rest of the PEM bundle contains the CA certificate.
 		if len(cb) > 1 {
@@ -754,8 +758,10 @@ func (c *Controller) toBarbicanSecretContainer(ctx context.Context, name string,
 				}
 				intermediatesPem.Write(pem.EncodeToMemory(block))
 			}
-			certificateChain.Intermediates.Payload = base64.StdEncoding.EncodeToString(intermediatesPem.Bytes())
-			certificateChain.Intermediates.PayloadContentType = OCTET_STREAM
+			certificateChain.Intermediates = &openstackutil.Certificate{
+				Payload:            base64.StdEncoding.EncodeToString(intermediatesPem.Bytes()),
+				PayloadContentType: OCTET_STREAM,
+			}
 		}
 	} else {
 		return "", fmt.Errorf("%s key doesn't exist in the secret %s", IngressSecretCertName, name)
