@@ -16,9 +16,9 @@ on:
         required: true
         default: 'ghcr.io'
       push:
-        description: 'Option to push to the registry'
+        description: 'Option to push to the registry. Set to `true` if you want to push'
         required: true
-        default: false
+        default: 'false'
 
 env:
   REGISTRY: ${{ github.event.inputs.registry || 'ghcr.io' }}
@@ -49,7 +49,7 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
-          push: ${{ github.event.inputs.push }}
+          push: ${{ github.event.inputs.push == 'true' }}
           context: .
           target: ${{ env.PACKAGE }}
           tags: ${{ steps.meta.outputs.tags }}
