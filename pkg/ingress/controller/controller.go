@@ -17,6 +17,7 @@ limitations under the License.
 package controller
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/rand"
@@ -30,6 +31,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gophercloud/gophercloud/v2/openstack/keymanager/v1/secrets"
 	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/l7policies"
 	"github.com/gophercloud/gophercloud/v2/openstack/loadbalancer/v2/pools"
 	"github.com/gophercloud/gophercloud/v2/openstack/networking/v2/extensions/security/groups"
@@ -138,12 +140,23 @@ const (
 	// Refer to https://docs.openstack.org/octavia/latest/configuration/configref.html#haproxy_amphora.timeout_tcp_inspect
 	IngressAnnotationTimeoutTCPInspect = "octavia.ingress.kubernetes.io/timeout-tcp-inspect"
 
+	// IngressAnnotationTLSSecretInContainer will create a secret container with the TLS certificate to be utilised by
+	// the load balancer listener.
+	// If not set, this value defaults to the pre Stein way of loading the cert via a basic secret.
+	// Refer to https://docs.openstack.org/octavia/rocky/user/guides/basic-cookbook.html#deploy-a-tls-terminated-https-load-balancer
+	// for the default way.
+	// Refer to https://docs.openstack.org/octavia/stein/user/guides/basic-cookbook.html#deploy-a-tls-terminated-https-load-balancer
+	// for the pattern that this annotation brings.
+	IngressAnnotationTLSSecretInContainer = "octavia.ingress.kubernetes.io/tls-secret-in-container"
+
 	// IngressSecretCertName is certificate key name defined in the secret data.
 	IngressSecretCertName = "tls.crt"
 	// IngressSecretKeyName is private key name defined in the secret data.
 	IngressSecretKeyName = "tls.key"
 
 	// BarbicanSecretNameTemplate is the name format string to create Barbican secret.
+	// When utilising the `IngressAnnotationTLSSecretInContainer` annotation, multiple secrets will be created with the suffixes
+	// of the keys in the secret container
 	BarbicanSecretNameTemplate = "kube_ingress_%s_%s_%s_%s"
 )
 
@@ -701,7 +714,53 @@ func (c *Controller) toBarbicanSecret(ctx context.Context, name string, namespac
 	}
 	encoded := base64.StdEncoding.EncodeToString(pfxData)
 
-	return openstackutil.EnsureSecret(ctx, c.osClient.Barbican, toSecretName, "application/octet-stream", encoded)
+	return openstackutil.EnsureSecret(ctx, c.osClient.Barbican, toSecretName, "application/octet-stream", encoded, secrets.OpaqueSecret)
+}
+
+func (c *Controller) toBarbicanSecretContainer(ctx context.Context, name string, namespace string, toSecretName string) (string, error) {
+	// Passphrase is not implemented since is not supported by the controller in general yet.
+	const (
+		OCTET_STREAM = "application/octet-stream"
+	)
+	kube_secret, err := c.kubeClient.CoreV1().Secrets(namespace).Get(ctx, name, apimetav1.GetOptions{})
+	if err != nil {
+		// TODO(dannejosefsson): Creating secret on the fly not supported yet.
+		return "", err
+	}
+	var certificateChain openstackutil.CertificateChain
+	if keyBytes, isPresent := kube_secret.Data[IngressSecretKeyName]; isPresent {
+		certificateChain.PrivateKey.Payload = base64.StdEncoding.EncodeToString(keyBytes)
+		certificateChain.PrivateKey.PayloadContentType = OCTET_STREAM
+	} else {
+		return "", fmt.Errorf("%s key doesn't exist in the secret %s", IngressSecretKeyName, name)
+	}
+
+	var cb []*x509.Certificate
+	if certBytes, isPresent := kube_secret.Data[IngressSecretCertName]; isPresent {
+		cb, err = parsePEMBundle(certBytes)
+		if err != nil {
+			return "", err
+		}
+		certificateChain.Certificate.Payload = base64.StdEncoding.EncodeToString(cb[0].Raw)
+		certificateChain.PrivateKey.PayloadContentType = OCTET_STREAM
+
+		// We assume that the rest of the PEM bundle contains the CA certificate.
+		if len(cb) > 1 {
+			var intermediatesPem bytes.Buffer
+			for _, cert := range cb[1:] {
+				block := &pem.Block{
+					Type:  "CERTIFICATE",
+					Bytes: cert.Raw,
+				}
+				intermediatesPem.Write(pem.EncodeToMemory(block))
+			}
+			certificateChain.Intermediates.Payload = base64.StdEncoding.EncodeToString(intermediatesPem.Bytes())
+			certificateChain.Intermediates.PayloadContentType = OCTET_STREAM
+		}
+	} else {
+		return "", fmt.Errorf("%s key doesn't exist in the secret %s", IngressSecretCertName, name)
+	}
+	return openstackutil.EnsureContainer(ctx, c.osClient.Barbican, toSecretName, certificateChain)
 }
 
 func (c *Controller) ensureIngress(ctx context.Context, ing *nwv1.Ingress) error {
@@ -745,17 +804,28 @@ func (c *Controller) ensureIngress(ctx context.Context, ing *nwv1.Ingress) error
 	}
 
 	// Convert kubernetes secrets to barbican ones
+	tlsSecretAsContainer := getStringFromIngressAnnotation(ing, IngressAnnotationTLSSecretInContainer, "false")
 	var secretRefs []string
 	for _, tls := range ing.Spec.TLS {
 		secretName := fmt.Sprintf(BarbicanSecretNameTemplate, clusterName, ingNamespace, ingName, tls.SecretName)
-		secretRef, err := c.toBarbicanSecret(ctx, tls.SecretName, ingNamespace, secretName)
-		if err != nil {
-			return fmt.Errorf("failed to create Barbican secret: %v", err)
+		if tlsSecretAsContainer == "false" {
+			secretRef, err := c.toBarbicanSecret(ctx, tls.SecretName, ingNamespace, secretName)
+			if err != nil {
+				return fmt.Errorf("failed to create Barbican secret: %v", err)
+			}
+
+			logger.WithFields(log.Fields{"secretName": secretName, "secretRef": secretRef}).Info("secret created in Barbican")
+
+			secretRefs = append(secretRefs, secretRef)
+		} else {
+			secretRef, err := c.toBarbicanSecretContainer(ctx, tls.SecretName, ingNamespace, secretName)
+			if err != nil {
+				return fmt.Errorf("failed to create Barbican secret container: %v", err)
+			}
+			logger.WithFields(log.Fields{"secretName": secretName, "secretRef": secretRef}).Info("secret container created in Barbican")
+
+			secretRefs = append(secretRefs, secretRef)
 		}
-
-		logger.WithFields(log.Fields{"secretName": secretName, "secretRef": secretRef}).Info("secret created in Barbican")
-
-		secretRefs = append(secretRefs, secretRef)
 	}
 	port := 80
 	if len(secretRefs) > 0 {
